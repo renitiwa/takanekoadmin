@@ -15,15 +15,16 @@
 </head>
 <body class="min-h-screen flex items-start justify-center p-4 pt-10">
 
-    <div class="bg-white border-2 border-black shadow-brutalist w-full max-w-xl">
+    <div class="bg-white border-2 border-black shadow-brutalist w-full max-w-2xl">
         <!-- タブメニュー -->
         <div class="flex border-b-2 border-black">
-            <button id="tab-btn-news" class="flex-1 py-3 font-bold text-center tab-active transition-colors" onclick="switchTab('news')">📰 ニュース投稿</button>
-            <button id="tab-btn-settings" class="flex-1 py-3 font-bold text-center tab-inactive transition-colors border-l-2 border-black" onclick="switchTab('settings')">⚙️ サイト設定</button>
+            <button id="tab-btn-news" class="flex-1 py-3 font-bold text-center tab-active transition-colors text-sm sm:text-base" onclick="switchTab('news')">📰 ニュース</button>
+            <button id="tab-btn-settings" class="flex-1 py-3 font-bold text-center tab-inactive transition-colors border-l-2 border-black text-sm sm:text-base" onclick="switchTab('settings')">⚙️ サイト設定</button>
+            <button id="tab-btn-requests" class="flex-1 py-3 font-bold text-center tab-inactive transition-colors border-l-2 border-black text-sm sm:text-base" onclick="switchTab('requests')">🎮 ゲーム募集</button>
         </div>
 
         <div class="p-6">
-            <!-- ニュース投稿フォーム -->
+            <!-- 1. ニュース投稿フォーム -->
             <form id="admin-form-news" onsubmit="submitNews(event)" class="space-y-4">
                 <div>
                     <label class="block text-sm font-bold mb-1">日付</label>
@@ -40,7 +41,7 @@
                 <button type="submit" id="submit-news-btn" class="w-full py-3 bg-black text-white font-bold hover:bg-gray-800 transition-colors mt-4 shadow-[2px_2px_0px_#000]">ニュースを投稿する</button>
             </form>
 
-            <!-- サイト全体設定フォーム -->
+            <!-- 2. サイト全体設定フォーム -->
             <form id="admin-form-settings" onsubmit="submitSettings(event)" class="space-y-4 hidden">
                 <p class="text-xs text-gray-500 mb-4">※ここで保存した内容は、公式サイトのトップページに即座に反映されます。</p>
                 <div>
@@ -57,15 +58,25 @@
                 </div>
                 <button type="submit" id="submit-settings-btn" class="w-full py-3 bg-black text-white font-bold hover:bg-gray-800 transition-colors mt-4 shadow-[2px_2px_0px_#000]">サイト設定を保存する</button>
             </form>
+
+            <!-- 3. ゲーム募集確認タブ -->
+            <div id="admin-requests-section" class="hidden space-y-4">
+                <h3 class="text-lg font-bold border-b-2 border-black pb-2">寄せられたゲーム募集一覧</h3>
+                <div id="requests-container" class="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                    <!-- ここにデータが入ります -->
+                    <p class="text-gray-500 text-center py-4">読み込み中...</p>
+                </div>
+                <button onclick="loadGameRequests()" class="w-full py-2 border-2 border-black font-bold hover:bg-gray-100 transition-colors mt-4">🔄 最新の情報に更新</button>
+            </div>
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, doc, setDoc, getDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
         // ▼▼▼ Firebaseの設定情報を貼り付けてください ▼▼▼
-        const firebaseConfig = {
+const firebaseConfig = {
   apiKey: "AIzaSyCkd-ripBHwCw1YxlZ5OfP4pEq-HOkAqnE",
   authDomain: "takaneko-57ab9.firebaseapp.com",
   projectId: "takaneko-57ab9",
@@ -78,38 +89,46 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // 今日の日付を自動セット
         const today = new Date();
         document.getElementById('admin-date').value = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
 
-        // タブ切り替えロジック
+        // タブ切り替え処理
         window.switchTab = function(tab) {
             const formNews = document.getElementById('admin-form-news');
             const formSettings = document.getElementById('admin-form-settings');
+            const secRequests = document.getElementById('admin-requests-section');
             const btnNews = document.getElementById('tab-btn-news');
             const btnSettings = document.getElementById('tab-btn-settings');
+            const btnRequests = document.getElementById('tab-btn-requests');
+
+            // 全て非表示・非アクティブにリセット
+            formNews.classList.add('hidden');
+            formSettings.classList.add('hidden');
+            secRequests.classList.add('hidden');
+            btnNews.className = "flex-1 py-3 font-bold text-center tab-inactive transition-colors text-sm sm:text-base";
+            btnSettings.className = "flex-1 py-3 font-bold text-center tab-inactive transition-colors border-l-2 border-black text-sm sm:text-base";
+            btnRequests.className = "flex-1 py-3 font-bold text-center tab-inactive transition-colors border-l-2 border-black text-sm sm:text-base";
 
             if (tab === 'news') {
                 formNews.classList.remove('hidden');
-                formSettings.classList.add('hidden');
-                btnNews.className = "flex-1 py-3 font-bold text-center tab-active transition-colors";
-                btnSettings.className = "flex-1 py-3 font-bold text-center tab-inactive transition-colors border-l-2 border-black";
-            } else {
-                formNews.classList.add('hidden');
+                btnNews.classList.replace('tab-inactive', 'tab-active');
+            } else if (tab === 'settings') {
                 formSettings.classList.remove('hidden');
-                btnNews.className = "flex-1 py-3 font-bold text-center tab-inactive transition-colors";
-                btnSettings.className = "flex-1 py-3 font-bold text-center tab-active transition-colors border-l-2 border-black";
+                btnSettings.classList.replace('tab-inactive', 'tab-active');
                 loadSettings(); 
+            } else if (tab === 'requests') {
+                secRequests.classList.remove('hidden');
+                btnRequests.classList.replace('tab-inactive', 'tab-active');
+                loadGameRequests();
             }
         };
 
-        // ニュース投稿
+        // 【ニュース投稿】
         window.submitNews = async function(event) {
             event.preventDefault();
             const submitBtn = document.getElementById('submit-news-btn');
             submitBtn.disabled = true;
             submitBtn.textContent = '送信中...';
-
             try {
                 await addDoc(collection(db, "news"), {
                     date: document.getElementById('admin-date').value,
@@ -117,20 +136,19 @@
                     content: document.getElementById('admin-content').value,
                     createdAt: serverTimestamp()
                 });
-                
                 alert("ニュースを投稿しました！");
                 document.getElementById('admin-title').value = '';
                 document.getElementById('admin-content').value = '';
             } catch (error) {
                 console.error("投稿エラー: ", error);
-                alert("エラーが発生しました。コンソールを確認してください。");
+                alert("エラーが発生しました。");
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'ニュースを投稿する';
             }
         };
 
-        // サイト設定の読み込み
+        // 【設定読み込み】
         async function loadSettings() {
             try {
                 const docSnap = await getDoc(doc(db, "settings", "general"));
@@ -140,18 +158,15 @@
                     if(data.xUrl) document.getElementById('setting-x').value = data.xUrl;
                     if(data.ytUrl) document.getElementById('setting-yt').value = data.ytUrl;
                 }
-            } catch (error) {
-                console.error("設定読み込みエラー", error);
-            }
+            } catch (error) { console.error("設定読み込みエラー", error); }
         }
 
-        // サイト設定の保存
+        // 【設定保存】
         window.submitSettings = async function(event) {
             event.preventDefault();
             const submitBtn = document.getElementById('submit-settings-btn');
             submitBtn.disabled = true;
             submitBtn.textContent = '保存中...';
-
             try {
                 await setDoc(doc(db, "settings", "general"), {
                     intro: document.getElementById('setting-intro').value,
@@ -159,14 +174,50 @@
                     ytUrl: document.getElementById('setting-yt').value,
                     updatedAt: serverTimestamp()
                 }, { merge: true });
-                
-                alert("サイト設定を保存しました！公式サイトに反映されています。");
+                alert("サイト設定を保存しました！");
             } catch (error) {
                 console.error("設定保存エラー: ", error);
                 alert("エラーが発生しました。");
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'サイト設定を保存する';
+            }
+        };
+
+        // 【ゲーム募集読み込み】
+        window.loadGameRequests = async function() {
+            const container = document.getElementById('requests-container');
+            container.innerHTML = '<p class="text-gray-500 text-center py-4">読み込み中...</p>';
+            try {
+                const q = query(collection(db, "gameRequests"), orderBy("createdAt", "desc"));
+                const querySnapshot = await getDocs(q);
+                container.innerHTML = '';
+                
+                if (querySnapshot.empty) {
+                    container.innerHTML = '<p class="text-gray-500 text-center py-4">まだ募集はありません。</p>';
+                    return;
+                }
+                
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const date = data.createdAt ? data.createdAt.toDate().toLocaleString('ja-JP') : '送信日時不明';
+                    
+                    let html = `
+                        <div class="border-2 border-black p-4 bg-gray-50 shadow-brutalist-sm">
+                            <div class="text-xs text-gray-500 mb-1 border-b border-gray-300 pb-1">${date}</div>
+                            <div class="font-bold text-xl mb-3">🎮 ${data.gameName}</div>
+                            <div class="mb-2 text-sm"><span class="font-bold bg-black text-white px-2 py-0.5 text-xs mr-2">名前</span> ${data.name}</div>
+                            <div class="mb-3 text-sm"><span class="font-bold bg-black text-white px-2 py-0.5 text-xs mr-2">おすすめ</span><br><p class="mt-1 whitespace-pre-line">${data.recommend}</p></div>
+                    `;
+                    if (data.url) {
+                        html += `<div class="text-sm"><a href="${data.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all font-bold">🔗 ${data.url}</a></div>`;
+                    }
+                    html += `</div>`;
+                    container.insertAdjacentHTML('beforeend', html);
+                });
+            } catch (error) {
+                console.error("募集読み込みエラー", error);
+                container.innerHTML = '<p class="text-red-500 text-center py-4">読み込みエラーが発生しました。</p>';
             }
         };
     </script>
